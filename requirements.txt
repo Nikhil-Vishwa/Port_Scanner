@@ -5,6 +5,10 @@
 colorama>=0.4.6      # Colored terminal output
 tqdm>=4.66.0         # Progress bars
 
+# Web Interface (optional)
+flask>=3.0.0         # Web interface
+flask-cors>=4.0.0    # CORS support for web API
+
 # Optional for advanced features
 scapy>=2.5.0         # Required for SYN scan (needs admin privileges)
 python-nmap>=0.7.1   # Alternative scanning backend

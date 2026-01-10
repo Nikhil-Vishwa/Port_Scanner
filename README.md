@@ -30,6 +30,7 @@ A powerful, feature-rich port scanner built in Python with multi-threading, serv
 ### User Experience
 - **Interactive mode** - User-friendly prompts for beginners
 - **CLI mode** - Advanced command-line interface for automation
+- **Web interface** - Modern browser-based GUI with real-time updates
 - **Graceful degradation** - Works without optional dependencies
 
 ## 🚀 Quick Start
@@ -95,6 +96,29 @@ python portscanner.py localhost -p 1-65535 --vuln --threads 100
 python portscanner.py target.com -p 1-1000 -o results.json
 python portscanner.py target.com -p 1-1000 -o results.csv
 python portscanner.py target.com -p 1-1000 -o results.html
+```
+
+#### Web Interface Mode (NEW! 🌐)
+
+Launch the modern web-based GUI:
+
+```bash
+python portscanner.py --web
+```
+
+Then open your browser to `http://localhost:5000`
+
+**Features:**
+- 🎨 Beautiful, modern interface with gradient design
+- 📊 Real-time scan progress visualization
+- 🔄 Live updates as ports are discovered
+- 📈 Summary statistics dashboard
+- 💾 Export results directly from the browser
+- 📱 Responsive design works on mobile
+
+**Custom port:**
+```bash
+python portscanner.py --web --port 8080
 ```
 
 ## 📖 Command-Line Options

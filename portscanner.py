@@ -702,6 +702,760 @@ def export_html(results: Dict, filename: str):
 
 
 # ============================================================================
+# WEB INTERFACE
+# ============================================================================
+
+# Try to import Flask for web interface
+try:
+    from flask import Flask, render_template_string, request, jsonify
+    from flask_cors import CORS
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+
+# Global storage for active scans
+active_scans = {}
+scan_history = []
+scan_counter = 0
+
+def create_web_app():
+    """Create Flask web application"""
+    if not FLASK_AVAILABLE:
+        print(f"{Fore.RED}Flask is not installed. Install with: pip install flask flask-cors{Style.RESET_ALL}")
+        return None
+    
+    app = Flask(__name__)
+    CORS(app)
+    
+    # HTML Template for the web interface
+    HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Port Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+            animation: slideUp 0.5s ease-out;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .results {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .result-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            border-left: 4px solid #28a745;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .result-item.vuln {
+            border-left-color: #dc3545;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .port-number {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #28a745;
+        }
+        
+        .service-name {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+        
+        .summary-item h3 {
+            font-size: 2.5em;
+            margin-bottom: 5px;
+        }
+        
+        .summary-item p {
+            opacity: 0.9;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .status-message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Professional Port Scanner</h1>
+            <p>Advanced network security scanning tool</p>
+        </div>
+        
+        <div class="card">
+            <h2 style="margin-bottom: 20px; color: #333;">Configure Scan</h2>
+            
+            <form id="scanForm">
+                <div class="form-group">
+                    <label for="target">Target Host</label>
+                    <input type="text" id="target" name="target" placeholder="e.g., scanme.nmap.org or 192.168.1.1" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="profile">Scan Profile</label>
+                    <select id="profile" name="profile">
+                        <option value="quick">Quick Scan (Top 100 ports)</option>
+                        <option value="normal" selected>Normal Scan (Ports 1-1024)</option>
+                        <option value="deep">Deep Scan (All 65535 ports)</option>
+                        <option value="custom">Custom Ports</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="customPortsGroup" style="display: none;">
+                    <label for="customPorts">Custom Ports</label>
+                    <input type="text" id="customPorts" name="customPorts" placeholder="e.g., 80,443,8080 or 1-1000">
+                </div>
+                
+                <div class="form-group">
+                    <label>Advanced Options</label>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" name="banner" id="banner">
+                            Banner Grabbing
+                        </label>
+                        <label>
+                            <input type="checkbox" name="vuln" id="vuln">
+                            Vulnerability Scan
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn" id="scanBtn">Start Scan</button>
+            </form>
+            
+            <div class="status-message" id="statusMessage"></div>
+            
+            <div class="progress-container" id="progressContainer">
+                <h3 style="margin-bottom: 10px;">Scanning in progress...</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                <p id="progressText" style="margin-top: 10px; color: #666;"></p>
+            </div>
+        </div>
+        
+        <div class="card results" id="resultsCard">
+            <h2 style="margin-bottom: 20px; color: #333;">Scan Results</h2>
+            
+            <div class="summary" id="summary"></div>
+            
+            <h3 style="margin: 20px 0 15px 0; color: #333;">Open Ports</h3>
+            <div id="resultsContainer"></div>
+            
+            <div style="margin-top: 20px;">
+                <button class="btn" onclick="exportResults('json')">Export JSON</button>
+                <button class="btn" onclick="exportResults('csv')" style="margin-left: 10px;">Export CSV</button>
+                <button class="btn" onclick="exportResults('html')" style="margin-left: 10px;">Export HTML</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentScanId = null;
+        let currentResults = null;
+        
+        document.getElementById('profile').addEventListener('change', function() {
+            const customGroup = document.getElementById('customPortsGroup');
+            customGroup.style.display = this.value === 'custom' ? 'block' : 'none';
+        });
+        
+        document.getElementById('scanForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                target: formData.get('target'),
+                profile: formData.get('profile'),
+                banner: formData.get('banner') === 'on',
+                vuln: formData.get('vuln') === 'on'
+            };
+            
+            if (data.profile === 'custom') {
+                data.ports = formData.get('customPorts');
+            }
+            
+            startScan(data);
+        });
+        
+        async function startScan(data) {
+            const btn = document.getElementById('scanBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const resultsCard = document.getElementById('resultsCard');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            btn.disabled = true;
+            progressContainer.style.display = 'block';
+            resultsCard.style.display = 'none';
+            
+            showStatus('Starting scan...', 'info');
+            
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentScanId = result.scan_id;
+                    showStatus('Scan started successfully!', 'success');
+                    pollScanStatus();
+                } else {
+                    showStatus('Error: ' + result.error, 'error');
+                    btn.disabled = false;
+                    progressContainer.style.display = 'none';
+                }
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+                btn.disabled = false;
+                progressContainer.style.display = 'none';
+            }
+        }
+        
+        async function pollScanStatus() {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/scan/${currentScanId}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'running') {
+                        updateProgress(data.progress);
+                    } else if (data.status === 'completed') {
+                        clearInterval(interval);
+                        displayResults(data.results);
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        showStatus('Scan failed: ' + data.error, 'error');
+                        document.getElementById('scanBtn').disabled = false;
+                        document.getElementById('progressContainer').style.display = 'none';
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    showStatus('Error polling status: ' + error.message, 'error');
+                }
+            }, 1000);
+        }
+        
+        function updateProgress(progress) {
+            const fill = document.getElementById('progressFill');
+            const text = document.getElementById('progressText');
+            const percent = Math.round(progress);
+            
+            fill.style.width = percent + '%';
+            fill.textContent = percent + '%';
+            text.textContent = `Scanned ${percent}% of ports...`;
+        }
+        
+        function displayResults(results) {
+            currentResults = results;
+            
+            document.getElementById('scanBtn').disabled = false;
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('resultsCard').style.display = 'block';
+            
+            // Summary
+            const summary = document.getElementById('summary');
+            summary.innerHTML = `
+                <div class="summary-item">
+                    <h3>${results.open_ports}</h3>
+                    <p>Open Ports</p>
+                </div>
+                <div class="summary-item">
+                    <h3>${results.duration}s</h3>
+                    <p>Duration</p>
+                </div>
+                <div class="summary-item">
+                    <h3>${results.total_ports}</h3>
+                    <p>Total Scanned</p>
+                </div>
+                <div class="summary-item">
+                    <h3>${results.vulnerabilities ? results.vulnerabilities.length : 0}</h3>
+                    <p>Vulnerabilities</p>
+                </div>
+            `;
+            
+            // Results
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = '';
+            
+            if (results.open_port_list.length === 0) {
+                container.innerHTML = '<p style="color: #666;">No open ports found.</p>';
+                return;
+            }
+            
+            results.results.forEach(result => {
+                if (result.state === 'open') {
+                    const div = document.createElement('div');
+                    div.className = 'result-item';
+                    
+                    let content = `
+                        <div class="result-header">
+                            <div>
+                                <span class="port-number">Port ${result.port}</span>
+                                <span class="service-name"> - ${result.service || 'Unknown'}</span>
+                            </div>
+                            <span class="badge badge-success">OPEN</span>
+                        </div>
+                    `;
+                    
+                    if (result.version) {
+                        content += `<p><strong>Version:</strong> ${result.version}</p>`;
+                    }
+                    
+                    if (result.banner) {
+                        content += `<p><strong>Banner:</strong> <code>${result.banner.substring(0, 100)}</code></p>`;
+                    }
+                    
+                    if (result.response_time) {
+                        content += `<p><strong>Response Time:</strong> ${result.response_time}ms</p>`;
+                    }
+                    
+                    div.innerHTML = content;
+                    container.appendChild(div);
+                }
+            });
+            
+            // Vulnerabilities
+            if (results.vulnerabilities && results.vulnerabilities.length > 0) {
+                const vulnHeader = document.createElement('h3');
+                vulnHeader.textContent = 'Vulnerabilities Found';
+                vulnHeader.style.marginTop = '20px';
+                vulnHeader.style.color = '#dc3545';
+                container.appendChild(vulnHeader);
+                
+                results.vulnerabilities.forEach(vuln => {
+                    const div = document.createElement('div');
+                    div.className = 'result-item vuln';
+                    div.innerHTML = `
+                        <div class="result-header">
+                            <div>
+                                <strong>${vuln.title}</strong>
+                            </div>
+                            <span class="badge badge-danger">${vuln.severity.toUpperCase()}</span>
+                        </div>
+                        <p><strong>Port:</strong> ${vuln.port} (${vuln.service})</p>
+                        <p>${vuln.description}</p>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            showStatus('Scan completed successfully!', 'success');
+        }
+        
+        function showStatus(message, type) {
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message ' + type;
+            statusMessage.style.display = 'block';
+            
+            setTimeout(() => {
+                statusMessage.style.display = 'none';
+            }, 5000);
+        }
+        
+        async function exportResults(format) {
+            if (!currentResults) return;
+            
+            try {
+                const response = await fetch('/api/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        results: currentResults,
+                        format: format
+                    })
+                });
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `scan_${currentResults.target}_${new Date().getTime()}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                showStatus(`Results exported as ${format.toUpperCase()}`, 'success');
+            } catch (error) {
+                showStatus('Export failed: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+    """
+    
+    @app.route('/')
+    def index():
+        """Serve the main web interface"""
+        return render_template_string(HTML_TEMPLATE)
+    
+    @app.route('/api/scan', methods=['POST'])
+    def start_scan():
+        """Start a new port scan"""
+        global scan_counter
+        
+        try:
+            data = request.json
+            target = data.get('target')
+            profile = data.get('profile', 'normal')
+            banner = data.get('banner', False)
+            vuln = data.get('vuln', False)
+            
+            # Determine ports
+            if profile == 'custom':
+                ports = parse_ports(data.get('ports', '1-1024'))
+            else:
+                profile_config = Config.SCAN_PROFILES.get(profile, Config.SCAN_PROFILES['normal'])
+                ports = profile_config['ports']
+            
+            # Create scan ID
+            scan_counter += 1
+            scan_id = f"scan_{scan_counter}"
+            
+            # Initialize scan status
+            active_scans[scan_id] = {
+                'status': 'running',
+                'progress': 0,
+                'results': None,
+                'error': None
+            }
+            
+            # Start scan in background thread
+            def run_scan():
+                try:
+                    def progress_callback(scanned, total, progress):
+                        active_scans[scan_id]['progress'] = progress
+                    
+                    scanner = PortScanner(
+                        target=target,
+                        ports=ports,
+                        service_detection=True,
+                        banner_grabbing=banner,
+                        vuln_scan=vuln,
+                        progress_callback=progress_callback
+                    )
+                    
+                    results = scanner.scan()
+                    active_scans[scan_id]['status'] = 'completed'
+                    active_scans[scan_id]['results'] = results
+                    scan_history.append(results)
+                    
+                except Exception as e:
+                    active_scans[scan_id]['status'] = 'error'
+                    active_scans[scan_id]['error'] = str(e)
+            
+            thread = threading.Thread(target=run_scan)
+            thread.daemon = True
+            thread.start()
+            
+            return jsonify({'success': True, 'scan_id': scan_id})
+        
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+    
+    @app.route('/api/scan/<scan_id>', methods=['GET'])
+    def get_scan_status(scan_id):
+        """Get scan status"""
+        if scan_id not in active_scans:
+            return jsonify({'error': 'Scan not found'}), 404
+        
+        scan = active_scans[scan_id]
+        return jsonify(scan)
+    
+    @app.route('/api/export', methods=['POST'])
+    def export_scan():
+        """Export scan results"""
+        try:
+            data = request.json
+            results = data.get('results')
+            format_type = data.get('format', 'json')
+            
+            if format_type == 'json':
+                return jsonify(results)
+            elif format_type == 'csv':
+                # Generate CSV
+                output = "Port,State,Service,Version,Banner,Response Time\n"
+                for result in results['results']:
+                    if result['state'] == 'open':
+                        output += f"{result['port']},{result['state']},{result.get('service', '')},"
+                        output += f"{result.get('version', '')},{result.get('banner', '')},"
+                        output += f"{result.get('response_time', '')}\n"
+                
+                from flask import Response
+                return Response(output, mimetype='text/csv')
+            elif format_type == 'html':
+                # Use existing export_html function
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+                    export_html(results, f.name)
+                    with open(f.name, 'r') as html_file:
+                        html_content = html_file.read()
+                    from flask import Response
+                    return Response(html_content, mimetype='text/html')
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+    
+    return app
+
+
+def start_web_server(host='0.0.0.0', port=5000):
+    """Start the web server"""
+    app = create_web_app()
+    if app:
+        print(f"\n{Fore.CYAN}{'='*70}")
+        print(f"{Fore.CYAN}Starting Web Interface")
+        print(f"{Fore.CYAN}{'='*70}")
+        print(f"{Fore.GREEN}Server running at: http://localhost:{port}")
+        print(f"{Fore.YELLOW}Press Ctrl+C to stop the server")
+        print(f"{Fore.CYAN}{'='*70}\n")
+        
+        app.run(host=host, port=port, debug=False)
+
+
+# ============================================================================
 # MAIN FUNCTION
 # ============================================================================
 
@@ -734,7 +1488,8 @@ Examples:
         """
     )
     
-    parser.add_argument('target', help='Target IP address or hostname')
+    parser.add_argument('target', nargs='?', help='Target IP address or hostname')
+    parser.add_argument('--web', action='store_true', help='Start web interface')
     parser.add_argument('-p', '--ports', default='1-1024', help='Ports to scan (e.g., 80,443 or 1-1000)')
     parser.add_argument('--profile', choices=['quick', 'normal', 'deep'], help='Use scan profile')
     parser.add_argument('-t', '--threads', type=int, default=50, help='Number of threads (default: 50)')
@@ -744,8 +1499,18 @@ Examples:
     parser.add_argument('--vuln', action='store_true', help='Enable vulnerability scanning')
     parser.add_argument('-o', '--output', help='Output file (supports .json, .csv, .html)')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output')
+    parser.add_argument('--port', type=int, default=5000, help='Web server port (default: 5000)')
     
     args = parser.parse_args()
+    
+    # Launch web interface if requested
+    if args.web:
+        start_web_server(port=args.port)
+        return
+    
+    # Require target if not launching web interface
+    if not args.target:
+        parser.error('target is required unless --web is specified')
     
     # Disable colors if requested
     if args.no_color:
