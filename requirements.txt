@@ -1,0 +1,13 @@
+# Essential Dependencies for Professional Port Scanner
+# Install with: pip install -r requirements.txt
+
+# Optional but recommended for better user experience
+colorama>=0.4.6      # Colored terminal output
+tqdm>=4.66.0         # Progress bars
+
+# Optional for advanced features
+scapy>=2.5.0         # Required for SYN scan (needs admin privileges)
+python-nmap>=0.7.1   # Alternative scanning backend
+
+# Note: All core features work without these dependencies
+# The scanner will gracefully degrade if optional packages are not installed
